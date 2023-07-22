@@ -1,0 +1,51 @@
+env.PROJECT_GIT_NAME = 'docker-images'
+env.DOCKER_TAG = "${DOCKER_TAG}"
+env.WILY_S3 = 'introscope_tomcatMircoAgent_NoBA_NoPlatform_10.6..0.122.tar'
+env.JDKVERSION = "${JDKVERSION}"
+env.WLPVERSION = "${WLPVERSION}"
+
+pipeline{
+    agent any
+    stages{
+         stage('Cleanup before the build'){
+		      steps{
+	              sh "rm -rf ${PROJECT_GIT_NAME}"
+				}  
+	     }
+	     stage('Pull the wily binaries from S3'){
+		      steps{
+		          sh "cd /root/.jenkins/workspace/CICD"
+	              sh "wget -q --no-proxy http://laas.dc2.whc.oneadp.com/gems/CAAPM/Agents/Linux/Java/${WILY_S3}"
+				  }
+	     }
+         stage('Clone the repo'){
+		        steps{
+                     withCredentials([usernamePassword(credentialsId: 'gems-admin-credentials', passwordVariable: 'gemspwd', usernameVariable: 'gemsuser')]) {
+                     sh "git clone https://${gemsuser}:${gemspwd}@bitbucket.es.ad.adp.com/scm/gems/docker-images.git"
+					 }
+                   }
+         }
+	     stage('Copy wily binaries'){
+		       steps{
+	                sh "cp -rp ${WILY_S3} ${PROJECT_GIT_NAME}/"
+					}
+	     }
+         stage('Build Docker Image'){
+		       steps{
+                     sh "docker build --build-arg JDKVERSION=${JDKVERSION} --build-arg WLPVERSION=${WLPVERSION} -t wlp-base-image ${PROJECT_GIT_NAME}/"
+					 }
+         } 
+	     stage('Push Docker Image'){
+		 steps{
+	          script{
+	                 sh """
+	                 docker login -u=gems -p=gemsadmin dtr.cdl.es.ad.adp.com
+					 docker tag wlp-base-image dtr.cdl.es.ad.adp.com/gems/wlp:"${DOCKER_TAG}"
+                     docker push dtr.cdl.es.ad.adp.com/gems/wlp:"${DOCKER_TAG}"
+                     echo "Image pushed successfully"
+                     """
+	                }
+ 	          }
+        }
+    }
+}	
